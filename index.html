@@ -1170,6 +1170,9 @@
   }
 
   function deliverPdf(blob, filename){
+    // Prefer the downloads capability: it's a direct save-dialog call to the
+    // Claude host, not a browser tab navigation, so it isn't caught by
+    // ad-block / popup-block extensions the way window.open(blob:) can be.
     if(downloadsCap){
       downloadsCap.save({ filename: filename, data: blob }).then(function(){
         setPrintNotice(null);
@@ -1276,6 +1279,10 @@
       return;
     }
     var settled = false;
+    // Watchdog: some camera-permission failures (especially when access is
+    // blocked at the browser/host level rather than user-declined) never
+    // reach Quagga's init callback at all. Without this, the scanner screen
+    // would just hang forever with no way to fall back to manual entry.
     var watchdog = setTimeout(function(){
       if(settled) return;
       settled = true;
@@ -1290,10 +1297,18 @@
             facingMode:"environment",
             width:{ min:640, ideal:1280, max:1920 },
             height:{ min:480, ideal:720, max:1080 }
-          },
-          area:{ top:"20%", right:"5%", bottom:"20%", left:"5%" }
+          }
+          // No `area` crop here on purpose: it restricts Quagga's decode
+          // region to a percentage of the raw camera stream, which is not
+          // guaranteed to line up with what the on-screen reticle (a plain
+          // CSS overlay) visually shows once `object-fit:cover` crops the
+          // displayed video differently from the raw stream. A mismatch
+          // there would silently exclude the real barcode from ever being
+          // analyzed even though it looks centered on screen. Scanning the
+          // full frame costs a bit of CPU but guarantees nothing visible
+          // is ever skipped.
         },
-        locator: { patchSize:"medium", halfSample:false },
+        locator: { patchSize:"large", halfSample:false },
         numOfWorkers: Math.min(4, (navigator.hardwareConcurrency || 2)),
         decoder: { readers:["code_39_vin_reader","code_39_reader","code_128_reader"] },
         locate: true
@@ -1309,6 +1324,8 @@
         quaggaActive = true;
         Quagga.start();
         Quagga.onDetected(handleDetected);
+        // Light DOM-only feedback (never call render() here — that would
+        // tear down and rebuild the live video element on every frame).
         Quagga.onProcessed(function(result){
           var reticle = document.querySelector(".scanner-reticle");
           if(!reticle) return;
@@ -1330,11 +1347,19 @@
     }
     quaggaActive = false;
   }
+  // Single-frame barcode reads are noisy — a busy background, glare, or a
+  // slightly skewed angle regularly produces a plausible-looking but wrong
+  // 17-character read. Rather than trust the first hit, require either a
+  // checksum-valid VIN read twice in a row, or the same exact code (even if
+  // checksum fails, since not all VINs use the check-digit scheme) three
+  // times in a row, before accepting it as real.
   function handleDetected(result){
     if(scanner.mode !== "camera") return;
     var cr = result && result.codeResult;
     var raw = (cr && cr.code) || "";
     var code = raw.replace(/[^A-Z0-9]/gi,"").toUpperCase();
+    // Visible on-screen debug readout — lets us see exactly what the decoder
+    // is producing without needing phone dev tools.
     var dbg = document.getElementById("scannerDebug");
     if(dbg){
       dbg.textContent = "read: \"" + raw + "\" (" + raw.length + " chars, " +

@@ -1356,10 +1356,16 @@
   }
   // Single-frame barcode reads are noisy — a busy background, glare, or a
   // slightly skewed angle regularly produces a plausible-looking but wrong
-  // 17-character read. Rather than trust the first hit, require either a
-  // checksum-valid VIN read twice in a row, or the same exact code (even if
-  // checksum fails, since not all VINs use the check-digit scheme) three
-  // times in a row, before accepting it as real.
+  // 17-character read. The VIN check digit (position 9) is already a strong
+  // signal on its own — a random misread has only a 1-in-11 chance of also
+  // landing on a valid checksum — so accept immediately the first time a
+  // read passes checksum, rather than waiting for the same exact string to
+  // repeat. Requiring an exact repeat was the main reason scanning felt
+  // unreliable: real reads jitter slightly frame-to-frame even when each one
+  // individually is correct, so two IDENTICAL reads in a row could take many
+  // attempts to line up by chance. Only fall back to "same code 3 times in a
+  // row" for the rare VIN whose checksum doesn't validate (pre-1981 VINs, or
+  // a manufacturer that didn't follow the check-digit scheme).
   function handleDetected(result){
     if(scanner.mode !== "camera") return;
     var cr = result && result.codeResult;
@@ -1380,7 +1386,7 @@
       scanner.lastReadStreak = 1;
     }
     var checksumOk = vinChecksumValid(code);
-    var confirmed = (checksumOk && scanner.lastReadStreak >= 2) || scanner.lastReadStreak >= 3;
+    var confirmed = checksumOk || scanner.lastReadStreak >= 3;
     if(!confirmed) return;
     stopQuagga();
     scanner.mode = "confirm";

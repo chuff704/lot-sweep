@@ -633,9 +633,9 @@
     var rows = s.vehicles.map(function(v){
       var title = [v.year || "", v.make || "Unknown make", v.model || ""].filter(Boolean).join(" ") + (v.trim ? " " + v.trim : "");
       return (
-        "<li class=\"vehicle-card status-\" + statusKey(v.status) + \"\" data-open-vehicle=\"\" + escapeHtml(v.id) + \"\">\" +
-          \"<span class=\\\"status-stripe\\\" aria-hidden=\\\"true\\\"></span>\" +
-          \"<div class=\\\"vehicle-card-main\\\">" +
+        "<li class=\"vehicle-card status-" + statusKey(v.status) + "\" data-open-vehicle=\"" + escapeHtml(v.id) + "\">" +
+          "<span class=\"status-stripe\" aria-hidden=\"true\"></span>" +
+          "<div class=\"vehicle-card-main\">" +
             "<div class=\"vehicle-idline\">" +
               (v.stockNumber ? "<span class=\"vehicle-stock\">#" + escapeHtml(v.stockNumber) + "</span>" : "<span class=\"vehicle-stock is-muted\">No stock #</span>") +
               "<span class=\"vehicle-vin\">" + escapeHtml(v.vin) + "</span>" +
@@ -669,3 +669,726 @@
       "</main>"
     );
   }
+
+  function renderVehicleModal(){
+    var s = findSession(view.sessionId);
+    var v = s ? findVehicle(s, view.editingVehicleId) : null;
+    if(!v){ return ""; }
+    var decoded = decodeVin(v.vin);
+    var badges = "<span class=\"pill pill-neutral\">" + escapeHtml(v.vinSource) + "</span>";
+    badges += decoded.checksumValid ? "<span class=\"pill pill-ok\">Checksum valid</span>" : "<span class=\"pill pill-warn\">Checksum mismatch</span>";
+
+    function opts(list, current){
+      return list.map(function(o){ return "<option value=\"" + escapeHtml(o) + "\"" + (o===current?" selected":"") + ">" + escapeHtml(o) + "</option>"; }).join("");
+    }
+
+    return (
+      "<div class=\"modal-scrim\" id=\"vehicleModalScrim\">" +
+        "<div class=\"modal-panel\">" +
+          "<div class=\"modal-head\"><div><div class=\"modal-vin\">" + escapeHtml(v.vin) + "</div><div class=\"badge-row\" style=\"margin-top:6px;\">" + badges + "</div></div>" +
+            "<button class=\"modal-close\" id=\"closeVehicleModal\" type=\"button\" aria-label=\"Close\">×</button></div>" +
+          "<div class=\"modal-body\">" +
+            "<div class=\"field\"><label for=\"vf-stock\">Stock #</label><input id=\"vf-stock\" type=\"text\" placeholder=\"e.g. H240918\" value=\"" + escapeHtml(v.stockNumber || "") + "\"></div>" +
+            "<div class=\"field-row\">" +
+              "<div class=\"field\"><label for=\"vf-year\">Year</label><input id=\"vf-year\" type=\"text\" inputmode=\"numeric\" value=\"" + escapeHtml(v.year || "") + "\"></div>" +
+              "<div class=\"field\"><label for=\"vf-make\">Make</label><input id=\"vf-make\" type=\"text\" value=\"" + escapeHtml(v.make || "") + "\"></div>" +
+            "</div>" +
+            "<div class=\"field-row\">" +
+              "<div class=\"field\"><label for=\"vf-model\">Model</label><input id=\"vf-model\" type=\"text\" value=\"" + escapeHtml(v.model || "") + "\"></div>" +
+              "<div class=\"field\"><label for=\"vf-trim\">Trim</label><input id=\"vf-trim\" type=\"text\" value=\"" + escapeHtml(v.trim || "") + "\"></div>" +
+            "</div>" +
+            "<div class=\"field-row\">" +
+              "<div class=\"field\"><label for=\"vf-engine\">Engine</label><input id=\"vf-engine\" type=\"text\" value=\"" + escapeHtml(v.engine || "") + "\"></div>" +
+              "<div class=\"field\"><label for=\"vf-transmission\">Transmission</label><input id=\"vf-transmission\" type=\"text\" value=\"" + escapeHtml(v.transmission || "") + "\"></div>" +
+            "</div>" +
+            "<div class=\"field-row\">" +
+              "<div class=\"field\"><label for=\"vf-location\">Location</label><select id=\"vf-location\">" + opts(LOCATIONS, v.location) + "</select></div>" +
+              "<div class=\"field\"><label for=\"vf-status\">Status</label><select id=\"vf-status\">" + opts(STATUSES, v.status) + "</select></div>" +
+            "</div>" +
+            "<div class=\"field-row\">" +
+              "<div class=\"field\"><label for=\"vf-label\">Label status</label><select id=\"vf-label\">" + opts(LABELS, v.labelStatus) + "</select></div>" +
+            "</div>" +
+          "</div>" +
+          "<div class=\"modal-footer\">" +
+            "<button id=\"removeVehicleBtn\" type=\"button\" class=\"btn btn-danger\">Remove</button>" +
+            "<button id=\"printVehicleBtn\" type=\"button\" class=\"btn\">Print label</button>" +
+            "<button id=\"doneVehicleBtn\" type=\"button\" class=\"btn btn-accent\" style=\"flex:1;\">Done</button>" +
+          "</div>" +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderScanner(){
+    var top = "<div class=\"scanner-top\"><span class=\"scanner-tally\">" + scanner.addedCount + " added this session</span><button class=\"scanner-x\" id=\"closeScannerBtn\" type=\"button\" aria-label=\"Close scanner\">×</button></div>";
+    var body = "";
+
+    if(scanner.mode === "camera"){
+      body =
+        "<div class=\"scanner-stage\">" +
+          "<div id=\"scannerViewport\" class=\"scanner-viewport\"></div>" +
+          (scanner.cameraError ?
+            "<div class=\"scanner-error\"><span>" + escapeHtml(scanner.cameraError) + "</span></div>" :
+            "<div class=\"scanner-reticle-wrap\"><div class=\"scanner-reticle\">" +
+              "<div class=\"scanner-corner tl\"></div><div class=\"scanner-corner tr\"></div>" +
+              "<div class=\"scanner-corner bl\"></div><div class=\"scanner-corner br\"></div>" +
+              "<div class=\"scanner-scanline\"></div>" +
+            "</div></div>" +
+            "<div class=\"scanner-debug\" id=\"scannerDebug\"></div>" +
+            "<div class=\"scanner-hint\">Fill the box with the barcode, ~4–6in away, good light, hold steady</div>"
+          ) +
+        "</div>" +
+        "<div class=\"scanner-bottom\">" +
+          "<div class=\"scanner-link-row\"><button class=\"scanner-link\" id=\"toManualBtn\" type=\"button\">Type the VIN instead</button></div>" +
+        "</div>";
+    } else if(scanner.mode === "manual"){
+      var mv = escapeHtml(scanner.manualValue || "");
+      var feedback = "";
+      if(scanner.manualValue && scanner.manualValue.length === 17){
+        var d = decodeVin(scanner.manualValue);
+        feedback = d.checksumValid ?
+          "<span style=\"color:#3FCB92;\">Checksum valid" + (d.make ? " · " + escapeHtml(d.make) : "") + (d.year ? " · " + d.year : "") + "</span>" :
+          "<span style=\"color:#E7B64A;\">Checksum mismatch — double-check the VIN</span>";
+      } else if(scanner.manualValue){
+        feedback = "<span style=\"color:#9AA2B8;\">" + scanner.manualValue.length + " of 17 characters</span>";
+      }
+      body =
+        "<div class=\"manual-panel\">" +
+          "<h3>Enter VIN manually</h3>" +
+          "<p>Type or paste the 17-character VIN from the vehicle.</p>" +
+          "<input id=\"manualVinInput\" class=\"manual-input\" type=\"text\" maxlength=\"17\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\" placeholder=\"e.g. 1N4AL3FP0PC654321\" value=\"" + mv + "\">" +
+          "<div class=\"manual-feedback\">" + feedback + "</div>" +
+          "<button id=\"manualAddBtn\" type=\"button\" class=\"btn btn-accent btn-block\">Add vehicle</button>" +
+        "</div>" +
+        "<div class=\"scanner-bottom\">" +
+          "<div class=\"scanner-link-row\"><button class=\"scanner-link\" id=\"toCameraBtn\" type=\"button\">Use camera instead</button></div>" +
+        "</div>";
+    } else if(scanner.mode === "confirm"){
+      var dec = decodeVin(scanner.pendingVin);
+      var sub = [dec.year, dec.make].filter(Boolean).join(" · ") || "Unrecognized manufacturer prefix";
+      var check = dec.checksumValid ?
+        "<span class=\"pill pill-ok\">Checksum valid</span>" :
+        "<span class=\"pill pill-warn\">Checksum mismatch — verify</span>";
+      body =
+        "<div class=\"confirm-panel\">" +
+          "<div class=\"confirm-vin\">" + escapeHtml(scanner.pendingVin) + "</div>" +
+          "<div class=\"confirm-sub\">" + escapeHtml(sub) + "</div>" +
+          "<div class=\"badge-row\">" + check + "</div>" +
+          "<div class=\"confirm-actions\">" +
+            "<button id=\"rescanBtn\" type=\"button\" class=\"btn\">Rescan</button>" +
+            "<button id=\"confirmAddBtn\" type=\"button\" class=\"btn btn-accent\">Add vehicle</button>" +
+          "</div>" +
+        "</div>";
+    }
+
+    var doneRow = "<div class=\"scanner-bottom\" style=\"padding-top:0;\"><button id=\"doneScanningBtn\" type=\"button\" class=\"btn btn-block\">Done scanning</button></div>";
+
+    return "<div class=\"scanner-scrim\">" + top + body + (scanner.mode !== "confirm" ? doneRow : "") + "</div>";
+  }
+
+  function labelMarkup(v, s){
+    var title = [v.year || "", v.make || "Unknown make", v.model || ""].filter(Boolean).join(" ") + (v.trim ? " " + v.trim : "");
+    var stockHtml = v.stockNumber ?
+      "<div class=\"pl-stock\">#" + escapeHtml(v.stockNumber) + "</div>" :
+      "<div class=\"pl-stock pl-empty\">Not yet assigned</div>";
+    return (
+      "<div class=\"print-label\">" +
+        "<div class=\"pl-inner\">" +
+          "<div class=\"pl-header\"><span class=\"pl-store\">" + escapeHtml(s.store) + "</span><span class=\"pl-session\">" + escapeHtml(s.id) + "</span></div>" +
+          "<div><span class=\"pl-stock-label\">Stock #</span>" + stockHtml + "</div>" +
+          "<div class=\"pl-barcode-wrap\"><svg class=\"pl-barcode-svg\" data-vin=\"" + escapeHtml(v.vin) + "\"></svg><span class=\"pl-vin\">" + escapeHtml(v.vin) + "</span></div>" +
+          "<div class=\"pl-title\">" + escapeHtml(title || "Unidentified vehicle") + "</div>" +
+          "<div class=\"pl-grid\">" +
+            "<div class=\"pl-cell\"><span class=\"pl-cell-label\">Engine</span><span class=\"pl-cell-value\">" + escapeHtml(v.engine || "—") + "</span></div>" +
+            "<div class=\"pl-cell\"><span class=\"pl-cell-label\">Transmission</span><span class=\"pl-cell-value\">" + escapeHtml(v.transmission || "—") + "</span></div>" +
+            "<div class=\"pl-cell\"><span class=\"pl-cell-label\">Location</span><span class=\"pl-cell-value\">" + escapeHtml(v.location) + "</span></div>" +
+            "<div class=\"pl-cell\"><span class=\"pl-cell-label\">Status</span><span class=\"pl-cell-value\">" + escapeHtml(v.status) + "</span></div>" +
+          "</div>" +
+          "<div class=\"pl-footer\"><span>" + escapeHtml(v.vinSource) + " · scanned " + fmtWhen(v.addedAt || new Date().toISOString()) + "</span><span>Lot Sweep</span></div>" +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderPrintLabel(){
+    if(printState.mode === "batch") return renderBulkPrintOverlay();
+    return renderSinglePrintOverlay();
+  }
+
+  function renderSinglePrintOverlay(){
+    var s = findSession(printState.sessionId);
+    var v = s ? findVehicle(s, printState.vehicleId) : null;
+    if(!v) return "";
+    return (
+      "<div class=\"print-scrim\" id=\"printScrim\">" +
+        "<div class=\"print-scrim-top\"><span class=\"print-scrim-title\">Print vehicle label</span>" +
+          "<button class=\"print-scrim-close\" id=\"closePrintBtn\" type=\"button\" aria-label=\"Close\">×</button></div>" +
+        "<p class=\"print-scrim-hint\">Saves the label as a PDF — open it and click the print icon to send it to the Zebra.</p>" +
+        "<div class=\"print-stage\"><div class=\"print-batch\">" + labelMarkup(v, s) + "</div></div>" +
+        (printState.notice ? "<div class=\"print-notice is-error\">" + escapeHtml(printState.notice) + "</div>" : "") +
+        "<div class=\"print-scrim-actions\">" +
+          "<button id=\"closePrintBtn2\" type=\"button\" class=\"btn\">Close</button>" +
+          "<button id=\"doPrintBtn\" type=\"button\" class=\"btn btn-accent\">Print label…</button>" +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderBulkPrintOverlay(){
+    var s = findSession(printState.sessionId);
+    if(!s) return "";
+    var selected = printState.selected || {};
+    var rows = s.vehicles.map(function(v){
+      var title = [v.year || "", v.make || "Unknown make", v.model || ""].filter(Boolean).join(" ") + (v.trim ? " " + v.trim : "");
+      var checked = selected[v.id] ? " checked" : "";
+      var already = v.labelStatus === "Printed" ? "<span class=\"pill pill-ok\">Printed</span>" : "";
+      return (
+        "<label class=\"print-check-row\">" +
+          "<input type=\"checkbox\" class=\"print-check\" data-vehicle-check=\"" + escapeHtml(v.id) + "\"" + checked + ">" +
+          "<span class=\"print-check-main\">" +
+            "<span class=\"print-check-title\">" + (v.stockNumber ? "#" + escapeHtml(v.stockNumber) : "No stock #") + already + "</span>" +
+            "<span class=\"print-check-sub\">" + escapeHtml(title || "Unidentified vehicle") + " · " + escapeHtml(v.vin) + "</span>" +
+          "</span>" +
+        "</label>"
+      );
+    }).join("");
+    var count = s.vehicles.filter(function(v){ return selected[v.id]; }).length;
+
+    return (
+      "<div class=\"print-scrim\" id=\"printScrim\">" +
+        "<div class=\"print-scrim-top\"><span class=\"print-scrim-title\">Print vehicle labels</span>" +
+          "<button class=\"print-scrim-close\" id=\"closePrintBtn\" type=\"button\" aria-label=\"Close\">×</button></div>" +
+        "<p class=\"print-scrim-hint\">Saves the label as a PDF — open it and click the print icon to send it to the Zebra.</p>" +
+        "<div class=\"print-check-panel\">" +
+          "<div class=\"print-check-header\">" +
+            "<span>" + s.vehicles.length + " vehicle" + (s.vehicles.length === 1 ? "" : "s") + " in " + escapeHtml(s.id) + "</span>" +
+            "<span class=\"print-check-links\"><button type=\"button\" id=\"selectAllBtn\">All</button><button type=\"button\" id=\"selectNoneBtn\">None</button></span>" +
+          "</div>" +
+          "<div class=\"print-check-list\">" + rows + "</div>" +
+        "</div>" +
+        (printState.notice ? "<div class=\"print-notice is-error\">" + escapeHtml(printState.notice) + "</div>" : "") +
+        "<div class=\"print-scrim-actions\">" +
+          "<button id=\"closePrintBtn2\" type=\"button\" class=\"btn\">Close</button>" +
+          "<button id=\"doPrintBtn\" type=\"button\" class=\"btn btn-accent\"" + (count === 0 ? " disabled" : "") + ">Print " + count + " label" + (count === 1 ? "" : "s") + "…</button>" +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  /* ============ event wiring ============ */
+  function wireEvents(){
+    var byId = document.getElementById.bind(document);
+
+    var storeSel = byId("activeStoreSelect");
+    if(storeSel) storeSel.addEventListener("change", function(e){ state.activeStore = e.target.value; persist(); render(); });
+
+    var dismiss = byId("dismissNotice");
+    if(dismiss) dismiss.addEventListener("click", function(){ state.sampleNoticeDismissed = true; persist(); render(); });
+
+    var startBtn = byId("startSessionBtn");
+    if(startBtn) startBtn.addEventListener("click", startNewSession);
+
+    document.querySelectorAll("[data-open-session]").forEach(function(el){
+      el.addEventListener("click", function(){
+        view.screen = "session"; view.sessionId = el.getAttribute("data-open-session"); render();
+      });
+    });
+
+    var backBtn = byId("backBtn");
+    if(backBtn) backBtn.addEventListener("click", function(){ view.screen = "home"; view.sessionId = null; render(); });
+
+    var scanMoreBtn = byId("scanMoreBtn");
+    if(scanMoreBtn) scanMoreBtn.addEventListener("click", openScanner);
+
+    document.querySelectorAll("[data-open-vehicle]").forEach(function(el){
+      el.addEventListener("click", function(){ view.editingVehicleId = el.getAttribute("data-open-vehicle"); render(); });
+    });
+
+    var closeModal = byId("closeVehicleModal");
+    var doneModal = byId("doneVehicleBtn");
+    var scrim = byId("vehicleModalScrim");
+    [closeModal, doneModal].forEach(function(btn){ if(btn) btn.addEventListener("click", closeVehicleModal); });
+    if(scrim) scrim.addEventListener("click", function(e){ if(e.target === scrim) closeVehicleModal(); });
+
+    ["vf-stock","vf-year","vf-make","vf-model","vf-trim","vf-engine","vf-transmission","vf-location","vf-status","vf-label"].forEach(function(id){
+      var el = byId(id);
+      if(!el) return;
+      el.addEventListener("input", function(){ updateEditingVehicle(id, el.value); });
+      el.addEventListener("change", function(){ updateEditingVehicle(id, el.value); });
+    });
+
+    var removeBtn = byId("removeVehicleBtn");
+    if(removeBtn) removeBtn.addEventListener("click", removeEditingVehicle);
+
+    var printVehicleBtn = byId("printVehicleBtn");
+    if(printVehicleBtn) printVehicleBtn.addEventListener("click", openPrintLabel);
+
+    var closePrintBtn = byId("closePrintBtn");
+    var closePrintBtn2 = byId("closePrintBtn2");
+    [closePrintBtn, closePrintBtn2].forEach(function(btn){ if(btn) btn.addEventListener("click", closePrintLabel); });
+    var printScrim = byId("printScrim");
+    if(printScrim) printScrim.addEventListener("click", function(e){ if(e.target === printScrim) closePrintLabel(); });
+    var doPrintBtn = byId("doPrintBtn");
+    if(doPrintBtn) doPrintBtn.addEventListener("click", doPrint);
+
+    document.querySelectorAll("[data-vehicle-check]").forEach(function(cb){
+      cb.addEventListener("change", function(){
+        if(!printState || !printState.selected) return;
+        printState.selected[cb.getAttribute("data-vehicle-check")] = cb.checked;
+        render();
+      });
+    });
+    var selectAllBtn = byId("selectAllBtn");
+    if(selectAllBtn) selectAllBtn.addEventListener("click", function(){
+      var s = findSession(printState.sessionId);
+      if(s) s.vehicles.forEach(function(v){ printState.selected[v.id] = true; });
+      render();
+    });
+    var selectNoneBtn = byId("selectNoneBtn");
+    if(selectNoneBtn) selectNoneBtn.addEventListener("click", function(){
+      var s = findSession(printState.sessionId);
+      if(s) s.vehicles.forEach(function(v){ printState.selected[v.id] = false; });
+      render();
+    });
+
+    var printSessionBtn = byId("printSessionBtn");
+    if(printSessionBtn) printSessionBtn.addEventListener("click", openBulkPrint);
+
+    var closeScannerBtn = byId("closeScannerBtn");
+    if(closeScannerBtn) closeScannerBtn.addEventListener("click", closeScanner);
+    var doneScanningBtn = byId("doneScanningBtn");
+    if(doneScanningBtn) doneScanningBtn.addEventListener("click", closeScanner);
+
+    var toManualBtn = byId("toManualBtn");
+    if(toManualBtn) toManualBtn.addEventListener("click", function(){ scanner.mode = "manual"; render(); });
+    var toCameraBtn = byId("toCameraBtn");
+    if(toCameraBtn) toCameraBtn.addEventListener("click", function(){ scanner.mode = "camera"; scanner.cameraError = null; render(); });
+
+    var manualInput = byId("manualVinInput");
+    if(manualInput){
+      manualInput.addEventListener("input", function(){
+        scanner.manualValue = manualInput.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g,"");
+        var fb = document.querySelector(".manual-feedback");
+        if(fb){
+          if(scanner.manualValue.length === 17){
+            var d = decodeVin(scanner.manualValue);
+            fb.innerHTML = d.checksumValid ?
+              "<span style=\"color:#3FCB92;\">Checksum valid" + (d.make ? " · " + escapeHtml(d.make) : "") + (d.year ? " · " + d.year : "") + "</span>" :
+              "<span style=\"color:#E7B64A;\">Checksum mismatch — double-check the VIN</span>";
+          } else {
+            fb.innerHTML = "<span style=\"color:#9AA2B8;\">" + scanner.manualValue.length + " of 17 characters</span>";
+          }
+        }
+        manualInput.value = scanner.manualValue;
+      });
+      manualInput.addEventListener("keydown", function(e){
+        if(e.key === "Enter" && scanner.manualValue.length === 17){
+          e.preventDefault();
+          addManualVehicle();
+        }
+      });
+    }
+    var manualAddBtn = byId("manualAddBtn");
+    if(manualAddBtn) manualAddBtn.addEventListener("click", addManualVehicle);
+
+    var rescanBtn = byId("rescanBtn");
+    if(rescanBtn) rescanBtn.addEventListener("click", function(){ scanner.mode = "camera"; scanner.pendingVin = null; scanner.lastRead = null; scanner.lastReadStreak = 0; render(); });
+    var confirmAddBtn = byId("confirmAddBtn");
+    if(confirmAddBtn) confirmAddBtn.addEventListener("click", confirmAddVehicle);
+  }
+
+  /* ============ actions ============ */
+  function startNewSession(){
+    var id = "VS-" + state.nextSessionNum;
+    state.nextSessionNum++;
+    var session = {id:id, store:state.activeStore, createdAt: new Date().toISOString(), vehicles:[]};
+    state.sessions.push(session);
+    persist();
+    view.screen = "session"; view.sessionId = id;
+    openScanner();
+  }
+
+  function openScanner(){
+    scanner = {open:true, mode:"camera", pendingVin:null, addedCount:0, cameraError:null, manualValue:"", lastRead:null, lastReadStreak:0};
+    render();
+  }
+  function closeScanner(){
+    stopQuagga();
+    scanner.open = false;
+    render();
+  }
+
+  function newVehicleFromVin(vin, source){
+    var d = decodeVin(vin);
+    state.nextVehicleNum++;
+    return {
+      id: "v" + state.nextVehicleNum, vin: vin, vinSource: source, stockNumber: "", addedAt: new Date().toISOString(),
+      year: d.year, make: d.make, model: "", trim: "", engine: "", transmission: "",
+      location: LOCATIONS[0], status: STATUSES[0], labelStatus: LABELS[0]
+    };
+  }
+
+  function addManualVehicle(){
+    var vin = (scanner.manualValue || "").toUpperCase();
+    if(vin.length !== 17) return;
+    var s = findSession(view.sessionId);
+    if(!s) return;
+    s.vehicles.push(newVehicleFromVin(vin, "Manual"));
+    scanner.addedCount++;
+    scanner.manualValue = "";
+    persist();
+    render();
+  }
+
+  function confirmAddVehicle(){
+    var s = findSession(view.sessionId);
+    if(!s || !scanner.pendingVin) return;
+    s.vehicles.push(newVehicleFromVin(scanner.pendingVin, "Scanned"));
+    scanner.addedCount++;
+    scanner.pendingVin = null;
+    scanner.mode = "camera";
+    scanner.lastRead = null;
+    scanner.lastReadStreak = 0;
+    persist();
+    render();
+  }
+
+  function closeVehicleModal(){ view.editingVehicleId = null; render(); }
+
+  function openPrintLabel(){
+    printState = { sessionId: view.sessionId, mode:"single", vehicleId: view.editingVehicleId, notice:null };
+    view.editingVehicleId = null;
+    render();
+  }
+  function openBulkPrint(){
+    var s = findSession(view.sessionId);
+    if(!s || !s.vehicles.length) return;
+    var sel = {};
+    s.vehicles.forEach(function(v){ sel[v.id] = true; });
+    printState = { sessionId: view.sessionId, mode:"batch", selected: sel, notice:null };
+    render();
+  }
+  function closePrintLabel(){ printState = null; render(); }
+  function setPrintNotice(msg){
+    if(!printState) return;
+    printState.notice = msg;
+    render();
+  }
+
+  /* ---- label PDF generation (client-side, no server round-trip) ---- */
+  function drawBarcodeDataUrl(vin){
+    var canvas = document.createElement("canvas");
+    JsBarcode(canvas, vin, { format:"CODE39", displayValue:false, margin:0, height:120, width:3, background:"#ffffff", lineColor:"#000000" });
+    return canvas.toDataURL("image/png");
+  }
+  function fitTextLine(doc, text, maxWidth, startSize, minSize, font, style){
+    doc.setFont(font, style);
+    var size = startSize;
+    doc.setFontSize(size);
+    while(size > minSize && doc.getTextWidth(text) > maxWidth){
+      size -= 0.5;
+      doc.setFontSize(size);
+    }
+    if(doc.getTextWidth(text) > maxWidth){
+      var t = text;
+      while(t.length > 1 && doc.getTextWidth(t + "…") > maxWidth){
+        t = t.slice(0, -1);
+      }
+      text = t + "…";
+    }
+    return text;
+  }
+  function buildLabelPdf(vehicles, session){
+    var doc = new window.jspdf.jsPDF({ unit:"in", format:[4,3], orientation:"landscape" });
+    vehicles.forEach(function(v, idx){
+      if(idx > 0) doc.addPage([4,3], "landscape");
+      var M = 0.15;
+      doc.setDrawColor(0,0,0);
+
+      doc.setFont("helvetica","bold"); doc.setFontSize(10);
+      doc.text((session.store || "").toUpperCase(), M, 0.22);
+      doc.setFont("courier","normal"); doc.setFontSize(9);
+      doc.text(session.id, 4 - M, 0.22, {align:"right"});
+      doc.setLineWidth(0.018);
+      doc.line(M, 0.30, 4 - M, 0.30);
+
+      doc.setFont("helvetica","bold"); doc.setFontSize(8);
+      doc.text("STOCK #", M, 0.48);
+      if(v.stockNumber){
+        var stockText = fitTextLine(doc, "#" + v.stockNumber, 4 - M * 2, 32, 16, "helvetica", "bold");
+        doc.text(stockText, M, 0.95);
+      } else {
+        doc.setFont("helvetica","italic"); doc.setFontSize(15);
+        doc.text("Not yet assigned", M, 0.78);
+      }
+
+      var bcW = 3.5, bcH = 0.52, bcX = (4 - bcW) / 2, bcY = 1.08;
+      try{ doc.addImage(drawBarcodeDataUrl(v.vin), "PNG", bcX, bcY, bcW, bcH); }catch(e){}
+      doc.setFont("courier","bold"); doc.setFontSize(10);
+      doc.text(v.vin, 2, bcY + bcH + 0.16, {align:"center"});
+
+      doc.setLineWidth(0.012);
+      doc.line(M, 1.86, 4 - M, 1.86);
+      var title = [v.year || "", v.make || "Unknown make", v.model || ""].filter(Boolean).join(" ") + (v.trim ? " " + v.trim : "");
+      title = title || "Unidentified vehicle";
+      title = fitTextLine(doc, title, 4 - M * 2, 16, 10, "helvetica", "bold");
+      doc.text(title, M, 2.08);
+
+      var col2X = 2.05;
+      function cell(x, y, label, value){
+        doc.setFont("helvetica","bold"); doc.setFontSize(7);
+        doc.text(label.toUpperCase(), x, y);
+        doc.setFont("helvetica","bold"); doc.setFontSize(10.5);
+        doc.text(value || "—", x, y + 0.17);
+      }
+      cell(M, 2.23, "Engine", v.engine);
+      cell(col2X, 2.23, "Transmission", v.transmission);
+      cell(M, 2.52, "Location", v.location);
+      cell(col2X, 2.52, "Status", v.status);
+
+      doc.setLineWidth(0.008);
+      doc.line(M, 2.75, 4 - M, 2.75);
+      doc.setFont("helvetica","normal"); doc.setFontSize(7);
+      doc.text((v.vinSource || "") + " · scanned " + fmtWhen(v.addedAt || new Date().toISOString()), M, 2.86);
+      doc.text("Lot Sweep", 4 - M, 2.86, {align:"right"});
+    });
+    return doc;
+  }
+
+  var downloadsCap = null;
+  if(window.claude && window.claude.use){
+    window.claude.use("downloads").then(function(cap){ downloadsCap = cap; }).catch(function(){ downloadsCap = null; });
+  }
+
+  function tryWindowOpen(blob){
+    var opened = null;
+    try{
+      var url = URL.createObjectURL(blob);
+      opened = window.open(url, "_blank");
+    }catch(e){ opened = null; }
+    return !!opened;
+  }
+
+  function deliverPdf(blob, filename){
+    if(downloadsCap){
+      downloadsCap.save({ filename: filename, data: blob }).then(function(){
+        setPrintNotice(null);
+      }).catch(function(err){
+        var code = err && err.code;
+        if(code === "declined"){ setPrintNotice(null); return; }
+        if(code === "unavailable" || code === "not_granted" || code === "capability_disabled" || code === "capability_removed"){
+          if(tryWindowOpen(blob)){ setPrintNotice(null); return; }
+          setPrintNotice("Couldn't save or open the label here — try opening Lot Sweep in its own browser tab.");
+          return;
+        }
+        setPrintNotice(code === "too_large" ? "That file was too large to save." : "Couldn't save the label (" + (code || "unknown error") + ").");
+      });
+      return;
+    }
+    if(tryWindowOpen(blob)){
+      setPrintNotice(null);
+      return;
+    }
+    setPrintNotice("Couldn't open or save the label — try opening Lot Sweep in its own browser tab.");
+  }
+
+  function doPrint(){
+    if(!printState) return;
+    var s = findSession(printState.sessionId);
+    if(!s) return;
+    var vehicles;
+    if(printState.mode === "batch"){
+      var selected = printState.selected || {};
+      vehicles = s.vehicles.filter(function(v){ return selected[v.id]; });
+    } else {
+      var v = findVehicle(s, printState.vehicleId);
+      vehicles = v ? [v] : [];
+    }
+    if(!vehicles.length) return;
+    if(typeof window.jspdf === "undefined" || typeof JsBarcode === "undefined"){
+      setPrintNotice("Still loading — give it a second and try again.");
+      return;
+    }
+    var doc;
+    try{ doc = buildLabelPdf(vehicles, s); }
+    catch(e){ setPrintNotice("Couldn't build the label PDF."); return; }
+    var blob = doc.output("blob");
+    var filename = (vehicles.length === 1 ?
+      "label-" + (vehicles[0].stockNumber || vehicles[0].vin) :
+      "labels-" + s.id + "-" + vehicles.length) + ".pdf";
+    vehicles.forEach(function(v){ v.labelStatus = "Printed"; });
+    persist();
+    deliverPdf(blob, filename);
+  }
+
+  function drawPrintBarcode(){
+    if(!printState || typeof JsBarcode === "undefined") return;
+    document.querySelectorAll(".pl-barcode-svg").forEach(function(svg){
+      var vin = svg.getAttribute("data-vin");
+      if(!vin) return;
+      try{
+        JsBarcode(svg, vin, {
+          format:"CODE39", displayValue:false, margin:0, height:44, width:1.6, background:"#FFFFFF", lineColor:"#000000"
+        });
+        var w = parseFloat(svg.getAttribute("width")), h = parseFloat(svg.getAttribute("height"));
+        if(w && h){
+          svg.setAttribute("viewBox", "0 0 " + w + " " + h);
+          svg.removeAttribute("width");
+          svg.removeAttribute("height");
+          svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+        }
+      }catch(e){}
+    });
+  }
+
+  function updateEditingVehicle(fieldId, value){
+    var s = findSession(view.sessionId);
+    var v = s ? findVehicle(s, view.editingVehicleId) : null;
+    if(!v) return;
+    var map = {
+      "vf-stock":"stockNumber",
+      "vf-year":"year", "vf-make":"make", "vf-model":"model", "vf-trim":"trim",
+      "vf-engine":"engine", "vf-transmission":"transmission",
+      "vf-location":"location", "vf-status":"status", "vf-label":"labelStatus"
+    };
+    var key = map[fieldId];
+    if(!key) return;
+    v[key] = key === "year" ? (value ? parseInt(value,10) || value : "") : value;
+    persist();
+    if(key === "location" || key === "status" || key === "labelStatus") render();
+  }
+
+  function removeEditingVehicle(){
+    var s = findSession(view.sessionId);
+    if(!s) return;
+    s.vehicles = s.vehicles.filter(function(v){ return v.id !== view.editingVehicleId; });
+    view.editingVehicleId = null;
+    persist();
+    render();
+  }
+
+  /* ============ Quagga integration ============ */
+  function startQuagga(){
+    var target = document.getElementById("scannerViewport");
+    if(!target || typeof Quagga === "undefined"){
+      scanner.cameraError = "Camera scanning isn't available here — use “Type the VIN instead.”";
+      render();
+      return;
+    }
+    var settled = false;
+    var watchdog = setTimeout(function(){
+      if(settled) return;
+      settled = true;
+      scanner.cameraError = "Couldn't reach the camera — use “Type the VIN instead.”";
+      render();
+    }, 6000);
+    try{
+      Quagga.init({
+        inputStream: {
+          name:"Live", type:"LiveStream", target:target,
+          constraints:{
+            facingMode:"environment",
+            width:{ min:640, ideal:1280, max:1920 },
+            height:{ min:480, ideal:720, max:1080 }
+          },
+          area:{ top:"20%", right:"5%", bottom:"20%", left:"5%" }
+        },
+        locator: { patchSize:"medium", halfSample:false },
+        numOfWorkers: Math.min(4, (navigator.hardwareConcurrency || 2)),
+        decoder: { readers:["code_39_vin_reader","code_39_reader","code_128_reader"] },
+        locate: true
+      }, function(err){
+        if(settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        if(err){
+          scanner.cameraError = "Couldn't reach the camera — use “Type the VIN instead.”";
+          render();
+          return;
+        }
+        quaggaActive = true;
+        Quagga.start();
+        Quagga.onDetected(handleDetected);
+        Quagga.onProcessed(function(result){
+          var reticle = document.querySelector(".scanner-reticle");
+          if(!reticle) return;
+          var seeing = !!(result && ((result.boxes && result.boxes.length) || result.box));
+          reticle.classList.toggle("is-reading", seeing);
+        });
+      });
+    }catch(e){
+      if(settled) return;
+      settled = true;
+      clearTimeout(watchdog);
+      scanner.cameraError = "Couldn't reach the camera — use “Type the VIN instead.”";
+      render();
+    }
+  }
+  function stopQuagga(){
+    if(quaggaActive && typeof Quagga !== "undefined"){
+      try{ Quagga.offDetected(handleDetected); Quagga.stop(); }catch(e){}
+    }
+    quaggaActive = false;
+  }
+  function handleDetected(result){
+    if(scanner.mode !== "camera") return;
+    var cr = result && result.codeResult;
+    var raw = (cr && cr.code) || "";
+    var code = raw.replace(/[^A-Z0-9]/gi,"").toUpperCase();
+    var dbg = document.getElementById("scannerDebug");
+    if(dbg){
+      dbg.textContent = "read: \"" + raw + "\" (" + raw.length + " chars, " +
+        (cr && cr.format ? cr.format : "?") + ", err " + (cr && cr.error != null ? cr.error.toFixed(2) : "?") + ")";
+    }
+    if(code.length !== 17 || !vinFormatOk(code)) return;
+    if(code === scanner.lastRead){
+      scanner.lastReadStreak++;
+    } else {
+      scanner.lastRead = code;
+      scanner.lastReadStreak = 1;
+    }
+    var checksumOk = vinChecksumValid(code);
+    var confirmed = (checksumOk && scanner.lastReadStreak >= 2) || scanner.lastReadStreak >= 3;
+    if(!confirmed) return;
+    stopQuagga();
+    scanner.mode = "confirm";
+    scanner.pendingVin = code;
+    scanner.lastRead = null;
+    scanner.lastReadStreak = 0;
+    render();
+  }
+  function afterRender(){
+    if(scanner.open && scanner.mode === "camera" && !scanner.cameraError){
+      if(!quaggaActive) startQuagga();
+    } else {
+      if(quaggaActive) stopQuagga();
+    }
+    if(scanner.open && scanner.mode === "manual"){
+      var mi = document.getElementById("manualVinInput");
+      if(mi && document.activeElement !== mi) mi.focus();
+    }
+    if(printState) drawPrintBarcode();
+  }
+
+  /* ============ boot ============ */
+  function start(hotData){
+    state = (hotData && Array.isArray(hotData.sessions)) ? hotData : loadPersisted();
+    render();
+  }
+  if(window.claude && window.claude.hot && window.claude.hot.snapshot){
+    window.claude.hot.snapshot(function(){ return state; });
+  }
+  if(window.claude && window.claude.hot && window.claude.hot.ready){
+    window.claude.hot.ready(start);
+  } else {
+    start(window.claude && window.claude.hot ? window.claude.hot.data : {});
+  }
+})();
+</script>
+
+<p style="text-align:center; color:var(--text-faint); font-size:.75rem; padding:6px 18px 28px; font-family:var(--font-body);">
+  Prototype inspired by CDK&rsquo;s Vehicle Scan module &middot; VIN checks (year, manufacturer prefix, check digit) run locally in your browser &mdash; nothing is sent anywhere.
+</p>
+
+</body>
+</html>

@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lot Sweep</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#F2F4F8; --surface:#FFFFFF; --surface-2:#E7EAF1; --surface-hover:#DEE2EC;
+    --text:#11151D; --text-muted:#5A6178; --text-faint:#8890A3;
+    --border:#D5D9E3; --border-strong:#B9C0D0;
+    --accent:#E24A1E; --accent-hover:#C93E17; --accent-ink:#FFFFFF; --accent-soft:#FBE4DA;
+    --ok:#17825A; --ok-bg:#DFF3E9;
+    --warn:#9C6B05; --warn-bg:#FAEFD6;
+    --info:#285FA6; --info-bg:#E2ECFA;
+    --neutral:#5A6178; --neutral-bg:#E7E9F0;
+    --shadow:0 1px 2px rgba(20,24,38,.07), 0 10px 26px -14px rgba(20,24,38,.22);
+    --focus-ring:0 0 0 3px rgba(226,74,30,.35);
+    --font-display:'Barlow Condensed','Arial Narrow',sans-serif;
+    --font-body:'Public Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-mono:'JetBrains Mono','SFMono-Regular',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C0F15; --surface:#151A22; --surface-2:#1D2430; --surface-hover:#242C3A;
+      --text:#E7EAF2; --text-muted:#9AA2B8; --text-faint:#6C7386;
+      --border:#2A3140; --border-strong:#3A4356;
+      --accent:#FF6A3B; --accent-hover:#FF875C; --accent-ink:#180C06; --accent-soft:#3A1D12;
+      --ok:#3FCB92; --ok-bg:#0F3323;
+      --warn:#E7B64A; --warn-bg:#3A2C0C;
+      --info:#6CA3EC; --info-bg:#152A44;
+      --neutral:#9AA2B8; --neutral-bg:#1D2430;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 30px -16px rgba(0,0,0,.65);
+      --focus-ring:0 0 0 3px rgba(255,106,59,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C0F15; --surface:#151A22; --surface-2:#1D2430; --surface-hover:#242C3A;
+    --text:#E7EAF2; --text-muted:#9AA2B8; --text-faint:#6C7386;
+    --border:#2A3140; --border-strong:#3A4356;
+    --accent:#FF6A3B; --accent-hover:#FF875C; --accent-ink:#180C06; --accent-soft:#3A1D12;
+    --ok:#3FCB92; --ok-bg:#0F3323;
+    --warn:#E7B64A; --warn-bg:#3A2C0C;
+    --info:#6CA3EC; --info-bg:#152A44;
+    --neutral:#9AA2B8; --neutral-bg:#1D2430;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 30px -16px rgba(0,0,0,.65);
+    --focus-ring:0 0 0 3px rgba(255,106,59,.4);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--font-body); font-size:15px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .shell{max-width:640px; margin:0 auto; padding-inline:18px;}
+  h1,h2,h3{font-family:var(--font-display); font-weight:600; margin:0; text-wrap:balance;}
+  p{margin:0;}
+  button{font-family:inherit;}
+  a{color:inherit;}
+  ::selection{background:var(--accent-soft); color:var(--text);}
+  :focus-visible{outline:none; box-shadow:var(--focus-ring); border-radius:6px;}
+
+  /* ---------- header ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:20;
+    background:var(--surface); border-bottom:1px solid var(--border);
+  }
+  .topbar-inner{
+    display:flex; align-items:center; justify-content:space-between; gap:14px;
+    padding-block:12px;
+  }
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand-mark{
+    width:30px; height:30px; border-radius:7px; flex:none;
+    background:linear-gradient(155deg, var(--accent), var(--accent-hover));
+    position:relative; overflow:hidden;
+  }
+  .brand-mark::before{
+    content:""; position:absolute; inset:7px 5px; border-radius:2px;
+    background:repeating-linear-gradient(90deg, var(--accent-ink) 0 2px, transparent 2px 4px, var(--accent-ink) 4px 5px, transparent 5px 8px, var(--accent-ink) 8px 9px, transparent 9px 13px);
+    opacity:.92;
+  }
+  .brand-name{font-family:var(--font-display); font-weight:700; font-size:1.4rem; letter-spacing:.01em;}
+  .store-picker{display:flex; flex-direction:column; align-items:flex-end; gap:1px;}
+  .store-picker-label{font-size:.6875rem; text-transform:uppercase; letter-spacing:.07em; color:var(--text-faint);}
+  .store-picker select{
+    font-family:var(--font-body); font-weight:600; font-size:.8125rem; color:var(--text);
+    background:transparent; border:none; padding:1px 18px 1px 0; margin:0;
+    appearance:none; -webkit-appearance:none;
+    background-image:linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+    background-position:right 5px top 45%, right 0px top 45%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat;
+    text-align:right; cursor:pointer;
+  }
+
+  /* ---------- stats ---------- */
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding-block:16px 4px;}
+  .stat-tile{
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:12px 10px; display:flex; flex-direction:column; gap:2px;
+  }
+  .stat-value{font-family:var(--font-display); font-weight:700; font-size:1.75rem; font-variant-numeric:tabular-nums; line-height:1.05;}
+  .stat-label{font-size:.6875rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em;}
+
+  /* ---------- primary action ---------- */
+  .primary-action-row{padding-block:14px 6px; display:flex; flex-direction:column; gap:7px;}
+  .primary-action-hint{font-size:.8125rem; color:var(--text-muted);}
+  .primary-action-hint strong{color:var(--text); font-weight:600;}
+
+  .btn{
+    border-radius:9px; border:1px solid var(--border-strong); background:var(--surface); color:var(--text);
+    font-weight:600; font-size:.875rem; padding:9px 15px; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    transition:background-color .12s ease, border-color .12s ease, transform .05s ease;
+  }
+  .btn:hover{background:var(--surface-hover);}
+  .btn:active{transform:translateY(1px);}
+  .btn-accent{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
+  .btn-accent:hover{background:var(--accent-hover); border-color:var(--accent-hover);}
+  .btn-lg{padding:13px 18px; font-size:.9375rem; width:100%;}
+  .btn-ghost{background:transparent; border-color:transparent; color:var(--text-muted); padding:6px 4px;}
+  .btn-ghost:hover{background:transparent; color:var(--text); text-decoration:underline;}
+  .btn-danger{background:transparent; border-color:var(--border); color:#C0392B;}
+  .btn-block{width:100%;}
+
+  /* ---------- notice ---------- */
+  .notice{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+    background:var(--info-bg); border:1px solid color-mix(in srgb, var(--info) 35%, transparent);
+    color:var(--text); border-radius:9px; padding:10px 12px; font-size:.8125rem; margin-block:10px 14px;
+  }
+  .notice p{color:var(--text); line-height:1.45;}
+  .notice button{
+    background:none; border:none; color:var(--info); font-weight:600; font-size:.75rem;
+    cursor:pointer; white-space:nowrap; padding:2px 0;
+  }
+
+  /* ---------- sections ---------- */
+  .section-heading{display:flex; align-items:baseline; justify-content:space-between; padding-top:10px;}
+  .section-heading h2{font-size:1.125rem;}
+  .sessions{padding-bottom:36px;}
+
+  /* ---------- session list ---------- */
+  .session-list{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:9px;}
+  .session-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:11px;
+    padding:12px 14px; cursor:pointer; box-shadow:var(--shadow);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .session-card:hover{border-color:var(--border-strong);}
+  .session-card-top{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .session-id{font-family:var(--font-mono); font-weight:600; font-size:.9375rem; letter-spacing:.02em;}
+  .store-chip{
+    font-size:.6875rem; font-weight:600; color:var(--text-muted); background:var(--surface-2);
+    border-radius:99px; padding:3px 9px; white-space:nowrap;
+  }
+  .session-card-meta{font-size:.8125rem; color:var(--text-muted); display:flex; gap:6px;}
+  .session-card-statuses{display:flex; flex-wrap:wrap; gap:6px;}
+
+  .pill{
+    display:inline-flex; align-items:center; gap:5px; font-size:.6875rem; font-weight:600;
+    padding:3px 9px; border-radius:99px; white-space:nowrap; line-height:1.4;
+  }
+  .pill-dot{width:6px; height:6px; border-radius:99px; background:currentColor; flex:none;}
+  .pill-info{background:var(--info-bg); color:var(--info);}
+  .pill-warn{background:var(--warn-bg); color:var(--warn);}
+  .pill-ok{background:var(--ok-bg); color:var(--ok);}
+  .pill-neutral{background:var(--neutral-bg); color:var(--neutral);}
+
+  /* ---------- session detail ---------- */
+  .session-detail{padding-bottom:40px;}
+  .back-link{
+    background:none; border:none; color:var(--text-muted); font-weight:600; font-size:.8125rem;
+    padding:14px 0 4px; cursor:pointer;
+  }
+  .back-link:hover{color:var(--text);}
+  .session-detail-head{
+    display:flex; align-items:flex-end; justify-content:space-between; gap:12px;
+    padding-block:6px 14px; flex-wrap:wrap;
+  }
+  .session-detail-actions{display:flex; gap:8px;}
+  .session-detail-head h2{font-size:1.75rem; font-family:var(--font-mono); letter-spacing:.01em;}
+  .muted{color:var(--text-muted); font-size:.8125rem; margin-top:2px;}
+
+  .vehicle-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px;}
+  .vehicle-card{
+    position:relative; display:flex; align-items:center; gap:10px;
+    background:var(--surface); border:1px solid var(--border); border-radius:11px;
+    padding:12px 14px 12px 16px; cursor:pointer; box-shadow:var(--shadow); overflow:hidden;
+  }
+  .vehicle-card:hover{border-color:var(--border-strong);}
+  .status-stripe{position:absolute; left:0; top:0; bottom:0; width:4px;}
+  .status-pending .status-stripe{background:var(--info);}
+  .status-recon .status-stripe{background:var(--warn);}
+  .status-stocked .status-stripe{background:var(--ok);}
+  .vehicle-card-main{flex:1; min-width:0; display:flex; flex-direction:column; gap:5px;}
+  .vehicle-idline{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;}
+  .vehicle-stock{font-family:var(--font-mono); font-size:.8125rem; font-weight:700; letter-spacing:.02em; color:var(--text);}
+  .vehicle-stock.is-muted{font-weight:500; font-style:italic; color:var(--text-faint);}
+  .vehicle-vin{font-family:var(--font-mono); font-size:.75rem; letter-spacing:.02em; color:var(--text-faint);}
+  .vehicle-title{font-weight:600; font-size:.9375rem;}
+  .vehicle-tags{display:flex; flex-wrap:wrap; gap:6px;}
+  .chev{color:var(--text-faint); font-size:1.25rem; flex:none;}
+  .empty-state{
+    text-align:center; color:var(--text-muted); font-size:.875rem;
+    border:1px dashed var(--border-strong); border-radius:11px; padding:28px 16px;
+  }
+
+  /* ---------- modal shell (vehicle editor) ---------- */
+  .modal-scrim{
+    position:fixed; inset:0; background:rgba(10,12,18,.5); backdrop-filter:blur(1px);
+    display:flex; align-items:flex-end; justify-content:center; z-index:50; padding:0;
+  }
+  @media (min-width:560px){
+    .modal-scrim{align-items:center; padding:24px;}
+  }
+  .modal-panel{
+    background:var(--surface); width:100%; max-width:480px; max-height:92vh; overflow-y:auto;
+    border-radius:16px 16px 0 0; box-shadow:0 -8px 40px rgba(0,0,0,.25);
+    display:flex; flex-direction:column;
+  }
+  @media (min-width:560px){
+    .modal-panel{border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  }
+  .modal-head{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+    padding:16px 18px 10px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface);
+  }
+  .modal-vin{font-family:var(--font-mono); font-size:1.125rem; font-weight:600; letter-spacing:.02em; word-break:break-all;}
+  .modal-close{background:none; border:none; color:var(--text-muted); font-size:1.25rem; line-height:1; cursor:pointer; padding:4px;}
+  .modal-close:hover{color:var(--text);}
+  .modal-body{padding:14px 18px 20px; display:flex; flex-direction:column; gap:16px;}
+  .field-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .field{display:flex; flex-direction:column; gap:4px;}
+  .field label{font-size:.6875rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted);}
+  .field input, .field select{
+    font-family:var(--font-body); font-size:.875rem; color:var(--text); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:8px; padding:8px 10px;
+  }
+  .field input:focus, .field select:focus{border-color:var(--accent);}
+  .badge-row{display:flex; flex-wrap:wrap; gap:6px;}
+  .modal-footer{
+    display:flex; gap:10px; padding:14px 18px 18px; border-top:1px solid var(--border);
+  }
+
+  /* ---------- scanner overlay ---------- */
+  .scanner-scrim{position:fixed; inset:0; background:#05070B; z-index:60; display:flex; flex-direction:column;}
+  .scanner-top{
+    display:flex; align-items:center; justify-content:space-between; padding:14px 16px;
+    color:#EDEFF4;
+  }
+  .scanner-tally{font-size:.8125rem; color:#B9C0D0; font-weight:600;}
+  .scanner-x{background:none; border:none; color:#EDEFF4; font-size:1.5rem; line-height:1; cursor:pointer; padding:4px 8px;}
+  .scanner-stage{position:relative; flex:1; min-height:0; overflow:hidden; background:#000;}
+  .scanner-viewport{position:absolute; inset:0;}
+  .scanner-viewport video, .scanner-viewport canvas{width:100%; height:100%; object-fit:cover; position:absolute; inset:0;}
+  .scanner-reticle-wrap{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;}
+  .scanner-reticle{position:relative; width:78%; max-width:360px; aspect-ratio:16/7;}
+  .scanner-corner{position:absolute; width:26px; height:26px; border:3px solid var(--accent);}
+  .scanner-corner.tl{top:0; left:0; border-right:none; border-bottom:none; border-radius:6px 0 0 0;}
+  .scanner-corner.tr{top:0; right:0; border-left:none; border-bottom:none; border-radius:0 6px 0 0;}
+  .scanner-corner.bl{bottom:0; left:0; border-right:none; border-top:none; border-radius:0 0 0 6px;}
+  .scanner-corner.br{bottom:0; right:0; border-left:none; border-top:none; border-radius:0 0 6px 0;}
+  .scanner-reticle.is-reading .scanner-corner{border-color:#3FCB92;}
+  .scanner-scanline{
+    position:absolute; left:4%; right:4%; top:8%; height:2px; background:var(--accent);
+    box-shadow:0 0 8px 1px var(--accent); border-radius:2px;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .scanner-scanline{animation:sweep 1.9s ease-in-out infinite;}
+  }
+  @keyframes sweep{
+    0%,100%{top:8%;} 50%{top:88%;}
+  }
+  .scanner-hint{position:absolute; left:0; right:0; bottom:14px; text-align:center; color:#C7CCD9; font-size:.8125rem;}
+  .scanner-debug{position:absolute; left:0; right:0; bottom:38px; text-align:center; color:#6E7690; font-size:.6875rem; font-family:var(--font-mono); padding:0 10px; overflow-wrap:break-word;}
+  .scanner-error{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px;
+    color:#C7CCD9; text-align:center; padding:0 24px; font-size:.875rem;
+  }
+  .scanner-bottom{padding:14px 16px 20px; display:flex; flex-direction:column; gap:10px; background:#0B0E14;}
+  .scanner-link-row{text-align:center;}
+  .scanner-link{background:none; border:none; color:#E9A489; font-weight:600; font-size:.8125rem; cursor:pointer; text-decoration:underline; text-underline-offset:2px;}
+
+  .manual-panel{flex:1; display:flex; flex-direction:column; justify-content:center; padding:0 22px; gap:14px; color:#EDEFF4;}
+  .manual-panel h3{font-size:1.25rem; color:#EDEFF4;}
+  .manual-panel p{color:#9AA2B8; font-size:.8125rem;}
+  .manual-input{
+    width:100%; font-family:var(--font-mono); font-size:1.0625rem; letter-spacing:.04em;
+    background:#161A22; color:#EDEFF4; border:1px solid #2A3140; border-radius:9px; padding:12px 13px;
+    text-transform:uppercase;
+  }
+  .manual-input:focus{border-color:var(--accent); outline:none;}
+  .manual-feedback{font-size:.75rem; min-height:1em;}
+
+  .confirm-panel{
+    flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:14px;
+    padding:0 24px; text-align:center; color:#EDEFF4;
+  }
+  .confirm-vin{font-family:var(--font-mono); font-size:1.375rem; font-weight:600; letter-spacing:.03em; word-break:break-all;}
+  .confirm-sub{color:#9AA2B8; font-size:.875rem;}
+  .confirm-actions{display:flex; gap:10px; width:100%; max-width:340px;}
+  .confirm-actions .btn{flex:1;}
+
+  @media (max-width:400px){
+    .field-row{grid-template-columns:1fr;}
+    .brand-name{font-size:1.2rem;}
+  }
+
+  /* ---------- print label ---------- */
+  .print-scrim{
+    position:fixed; inset:0; background:rgba(10,12,18,.6); z-index:70;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    overflow-y:auto; padding:22px 16px 32px;
+  }
+  .print-scrim-top{width:100%; max-width:520px; display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  .print-scrim-title{color:#EDEFF4; font-family:var(--font-display); font-weight:600; font-size:1.125rem;}
+  .print-scrim-close{background:none; border:none; color:#EDEFF4; font-size:1.5rem; line-height:1; cursor:pointer; padding:4px 8px;}
+  .print-scrim-hint{width:100%; max-width:520px; color:#9AA2B8; font-size:.75rem; margin:-8px 0 16px;}
+  .print-stage{background:#3A3E48; padding:26px; border-radius:12px; display:flex; justify-content:center;}
+  .print-label{
+    width:4in; height:3in; background:#FFFFFF; color:#000000;
+    box-shadow:0 10px 30px rgba(0,0,0,.4);
+    transform:scale(1.35); transform-origin:center; margin:34px 24px;
+  }
+  .print-scrim-actions{width:100%; max-width:520px; display:flex; gap:10px; margin-top:18px;}
+  .print-scrim-actions .btn{flex:1;}
+  .print-scrim-actions .btn[disabled]{opacity:.5; cursor:not-allowed;}
+
+  .print-check-panel{
+    width:100%; max-width:520px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; overflow:hidden; display:flex; flex-direction:column;
+  }
+  .print-check-header{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:11px 14px; border-bottom:1px solid var(--border);
+    font-size:.75rem; font-weight:600; color:var(--text-muted);
+  }
+  .print-check-links{display:flex; gap:10px;}
+  .print-check-links button{
+    background:none; border:none; color:var(--accent); font-weight:700; font-size:.75rem;
+    cursor:pointer; padding:2px 0; text-transform:uppercase; letter-spacing:.04em;
+  }
+  .print-check-list{max-height:46vh; overflow-y:auto;}
+  .print-check-row{
+    display:flex; align-items:flex-start; gap:11px; padding:11px 14px;
+    border-bottom:1px solid var(--border); cursor:pointer;
+  }
+  .print-check-row:last-child{border-bottom:none;}
+  .print-check-row:hover{background:var(--surface-hover);}
+  .print-check{margin-top:3px; width:17px; height:17px; accent-color:var(--accent); flex:none; cursor:pointer;}
+  .print-check-main{display:flex; flex-direction:column; gap:2px; min-width:0;}
+  .print-check-title{display:flex; align-items:center; gap:7px; font-family:var(--font-mono); font-weight:700; font-size:.875rem;}
+  .print-check-sub{font-size:.75rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  .pl-inner{width:100%; height:100%; box-sizing:border-box; padding:.14in .16in; font-family:var(--font-body); display:flex; flex-direction:column; gap:.05in;}
+  .pl-header{display:flex; align-items:baseline; justify-content:space-between; border-bottom:1.2pt solid #000; padding-bottom:.04in;}
+  .pl-store{font-size:7.5pt; font-weight:700; text-transform:uppercase; letter-spacing:.06em;}
+  .pl-session{font-family:var(--font-mono); font-size:7.5pt;}
+  .pl-stock-label{font-size:6.5pt; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#000;}
+  .pl-stock{font-family:var(--font-display); font-weight:700; font-size:23pt; line-height:1; letter-spacing:.01em;}
+  .pl-stock.pl-empty{font-size:12pt; font-style:italic; font-weight:500;}
+  .pl-barcode-wrap{display:flex; flex-direction:column; align-items:center; gap:0;}
+  .pl-barcode-wrap svg{width:100%; max-width:3.5in; height:.46in;}
+  .pl-vin{font-family:var(--font-mono); font-size:8.5pt; letter-spacing:.05em; text-align:center;}
+  .pl-title{font-weight:700; font-size:12.5pt; line-height:1.15; text-wrap:balance;}
+  .pl-grid{display:grid; grid-template-columns:1fr 1fr; gap:.03in .14in; border-top:.8pt solid #000; padding-top:.05in;}
+  .pl-cell{display:flex; flex-direction:column; line-height:1.15;}
+  .pl-cell-label{font-size:6pt; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#333;}
+  .pl-cell-value{font-size:8pt; font-weight:600;}
+  .pl-footer{margin-top:auto; display:flex; justify-content:space-between; font-size:6pt; color:#333; border-top:.6pt solid #999; padding-top:.03in;}
+
+  .print-notice{font-size:.75rem; color:var(--text-muted); text-align:center; min-height:1.2em; width:100%; max-width:520px;}
+  .print-notice.is-error{color:#E0563E;}
+</style>
+</head>
+<body>
+
+
+<div id="app"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============ VIN decoding ============ */
+  var TRANSLIT = {A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,J:1,K:2,L:3,M:4,N:5,P:7,R:9,S:2,T:3,U:4,V:5,W:6,X:7,Y:8,Z:9};
+  var WEIGHTS = [8,7,6,5,4,3,2,10,0,9,8,7,6,5,4,3,2];
+  var YEAR_CODE = {A:2010,B:2011,C:2012,D:2013,E:2014,F:2015,G:2016,H:2017,J:2018,K:2019,L:2020,M:2021,N:2022,P:2023,R:2024,S:2025,T:2026,V:2027,W:2028,X:2029,Y:2030,
+    1:2031,2:2032,3:2033,4:2034,5:2035,6:2036,7:2037,8:2038,9:2039};
+  var WMI = {
+    KMH:"Hyundai", KM8:"Hyundai", "5NP":"Hyundai", "5NM":"Hyundai", KMF:"Hyundai",
+    KNA:"Kia", KND:"Kia", "5XY":"Kia", "5XX":"Kia",
+    "1N4":"Nissan", "3N1":"Nissan", JN1:"Nissan", JN8:"Nissan", "1N6":"Nissan",
+    "4T1":"Toyota", "4T3":"Toyota", "5TD":"Toyota", "2T1":"Toyota", JTD:"Toyota", "5TF":"Toyota",
+    "1FA":"Ford", "1FT":"Ford", "3FA":"Ford", "1FM":"Ford",
+    "1G1":"Chevrolet", "1GC":"Chevrolet", "3GN":"Chevrolet", "1GN":"Chevrolet",
+    "1GT":"GMC", "3GT":"GMC",
+    "1C4":"Jeep", "1C6":"Ram", "3C6":"Ram", "2C3":"Chrysler",
+    "1HG":"Honda", "2HG":"Honda", "5FN":"Honda", "19X":"Honda",
+    WVW:"Volkswagen", "3VW":"Volkswagen",
+    WBA:"BMW", "5UX":"BMW",
+    WDD:"Mercedes-Benz", "4JG":"Mercedes-Benz",
+    JM1:"Mazda", JM3:"Mazda",
+    "4S3":"Subaru", "4S4":"Subaru", JF1:"Subaru", JF2:"Subaru",
+    "5YJ":"Tesla", "7SA":"Tesla"
+  };
+
+  function vinFormatOk(v){ return /^[A-HJ-NPR-Z0-9]{17}$/i.test(v); }
+
+  function vinChecksumValid(v){
+    if(!vinFormatOk(v)) return false;
+    v = v.toUpperCase();
+    var sum = 0;
+    for(var i=0;i<17;i++){
+      var ch = v[i];
+      var val = /[0-9]/.test(ch) ? parseInt(ch,10) : (TRANSLIT[ch] || 0);
+      sum += val * WEIGHTS[i];
+    }
+    var rem = sum % 11;
+    var expect = rem === 10 ? "X" : String(rem);
+    return v[8] === expect;
+  }
+
+  function decodeVin(v){
+    var out = {formatOk:false, checksumValid:false, year:null, make:null};
+    if(!vinFormatOk(v)) return out;
+    v = v.toUpperCase();
+    out.formatOk = true;
+    out.checksumValid = vinChecksumValid(v);
+    var wmi = v.slice(0,3);
+    out.make = WMI[wmi] || null;
+    var yc = v[9];
+    var base = YEAR_CODE[yc] !== undefined ? YEAR_CODE[yc] : null;
+    if(base !== null){
+      var pos7IsDigit = /[0-9]/.test(v[6]);
+      out.year = pos7IsDigit ? base - 30 : base;
+    }
+    return out;
+  }
+
+  /* ============ constants ============ */
+  var STORES = ["Hyundai of Louisville", "Fred Martin Nissan"];
+  var LOCATIONS = ["Front Row", "Service Drive", "Detail Bay", "Back Lot", "Showroom"];
+  var STATUSES = ["Scanned – Pending Stock-In", "Held – Recon", "Stocked In"];
+  var LABELS = ["Not Printed", "Printed"];
+  var STORAGE_KEY = "lotsweep_state_v1";
+
+  function statusKey(s){
+    if(s === STATUSES[2]) return "stocked";
+    if(s === STATUSES[1]) return "recon";
+    return "pending";
+  }
+  function statusPillClass(s){
+    var k = statusKey(s);
+    return k === "stocked" ? "pill-ok" : (k === "recon" ? "pill-warn" : "pill-info");
+  }
+
+  /* ============ seed data ============ */
+  function seedState(){
+    return {
+      activeStore: STORES[0],
+      nextSessionNum: 1044,
+      nextVehicleNum: 4,
+      sampleNoticeDismissed: false,
+      sessions: [
+        {
+          id: "VS-1042", store: "Hyundai of Louisville", createdAt: "2026-09-14T09:12:00",
+          vehicles: [
+            {id:"v1", vin:"KMHD35LC0RA123456", vinSource:"Scanned", stockNumber:"H240918", addedAt:"2026-09-14T09:14:00", year:2024, make:"Hyundai", model:"Elantra", trim:"SEL", engine:"2.0L I4", transmission:"IVT (CVT)", location:"Showroom", status:STATUSES[2], labelStatus:"Printed"},
+            {id:"v2", vin:"4T1B11FKXNK445566", vinSource:"Scanned", stockNumber:"", addedAt:"2026-09-14T09:21:00", year:2022, make:"Toyota", model:"Camry", trim:"LE (trade-in)", engine:"2.5L I4", transmission:"8-Speed Automatic", location:"Detail Bay", status:STATUSES[1], labelStatus:"Not Printed"}
+          ]
+        },
+        {
+          id: "VS-1043", store: "Fred Martin Nissan", createdAt: "2026-09-13T15:40:00",
+          vehicles: [
+            {id:"v3", vin:"1N4AL3FP0PC654321", vinSource:"Scanned", stockNumber:"", addedAt:"2026-09-13T15:44:00", year:2023, make:"Nissan", model:"Altima", trim:"SV", engine:"", transmission:"", location:"Back Lot", status:STATUSES[0], labelStatus:"Not Printed"}
+          ]
+        }
+      ]
+    };
+  }
+
+  function loadPersisted(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        var parsed = JSON.parse(raw);
+        if(parsed && Array.isArray(parsed.sessions)) return parsed;
+      }
+    }catch(e){}
+    return seedState();
+  }
+  function persist(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+
+  /* ============ app state ============ */
+  var state = null;
+  var view = { screen:"home", sessionId:null, editingVehicleId:null };
+  var scanner = { open:false, mode:"camera", pendingVin:null, addedCount:0, cameraError:null, manualValue:"", lastRead:null, lastReadStreak:0 };
+  var quaggaActive = false;
+  var printState = null; /* {sessionId, vehicleId} */
+
+  function findSession(id){
+    for(var i=0;i<state.sessions.length;i++) if(state.sessions[i].id === id) return state.sessions[i];
+    return null;
+  }
+  function findVehicle(session, id){
+    for(var i=0;i<session.vehicles.length;i++) if(session.vehicles[i].id === id) return session.vehicles[i];
+    return null;
+  }
+
+  function escapeHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function fmtWhen(iso){
+    var d = new Date(iso);
+    if(isNaN(d.getTime())) return "";
+    var now = new Date();
+    var sameDay = d.toDateString() === now.toDateString();
+    var yest = new Date(now); yest.setDate(now.getDate()-1);
+    var isYest = d.toDateString() === yest.toDateString();
+    var time = d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+    if(sameDay) return "Today, " + time;
+    if(isYest) return "Yesterday, " + time;
+    return d.toLocaleDateString([], {month:"short", day:"numeric"}) + ", " + time;
+  }
+
+  /* ============ rendering ============ */
+  function render(){
+    var app = document.getElementById("app");
+    var html = renderHeader();
+    if(view.screen === "home"){
+      html += renderHome();
+    } else {
+      html += renderSessionDetail();
+    }
+    var modalHtml = "";
+    if(view.editingVehicleId){
+      modalHtml = renderVehicleModal();
+    }
+    var scannerHtml = "";
+    if(scanner.open){
+      scannerHtml = renderScanner();
+    }
+    var printHtml = "";
+    if(printState){
+      printHtml = renderPrintLabel();
+    }
+    app.innerHTML = html + modalHtml + scannerHtml + printHtml;
+    wireEvents();
+    afterRender();
+  }
+
+  function renderHeader(){
+    var options = STORES.map(function(s){
+      return "<option value=\"" + escapeHtml(s) + "\"" + (s === state.activeStore ? " selected" : "") + ">" + escapeHtml(s) + "</option>";
+    }).join("");
+    return (
+      "<header class=\"topbar\"><div class=\"topbar-inner shell\">" +
+        "<div class=\"brand\"><span class=\"brand-mark\" aria-hidden=\"true\"></span><span class=\"brand-name\">Lot Sweep</span></div>" +
+        "<label class=\"store-picker\"><span class=\"store-picker-label\">Working at</span>" +
+          "<select id=\"activeStoreSelect\">" + options + "</select>" +
+        "</label>" +
+      "</div></header>"
+    );
+  }
+
+  function renderHome(){
+    var total = 0, pending = 0, stocked = 0;
+    state.sessions.forEach(function(s){
+      s.vehicles.forEach(function(v){
+        total++;
+        if(statusKey(v.status) === "pending") pending++;
+        if(statusKey(v.status) === "stocked") stocked++;
+      });
+    });
+
+    var sessionsHtml = state.sessions.slice().sort(function(a,b){ return new Date(b.createdAt) - new Date(a.createdAt); }).map(function(s){
+      var counts = {pending:0, recon:0, stocked:0};
+      s.vehicles.forEach(function(v){ counts[statusKey(v.status)]++; });
+      var chips = [];
+      if(counts.pending) chips.push("<span class=\"pill pill-info\">" + counts.pending + " pending</span>");
+      if(counts.recon) chips.push("<span class=\"pill pill-warn\">" + counts.recon + " in recon</span>");
+      if(counts.stocked) chips.push("<span class=\"pill pill-ok\">" + counts.stocked + " stocked in</span>");
+      if(!chips.length) chips.push("<span class=\"pill pill-neutral\">No vehicles yet</span>");
+      return (
+        "<li class=\"session-card\" data-open-session=\"" + escapeHtml(s.id) + "\">" +
+          "<div class=\"session-card-top\"><span class=\"session-id\">" + escapeHtml(s.id) + "</span><span class=\"store-chip\">" + escapeHtml(s.store) + "</span></div>" +
+          "<div class=\"session-card-meta\"><span>" + s.vehicles.length + " vehicle" + (s.vehicles.length===1?"":"s") + "</span><span>·</span><span>" + fmtWhen(s.createdAt) + "</span></div>" +
+          "<div class=\"session-card-statuses\">" + chips.join("") + "</div>" +
+        "</li>"
+      );
+    }).join("");
+
+    var notice = "";
+    if(!state.sampleNoticeDismissed){
+      notice = "<div class=\"notice\"><p>These two sessions are sample data so you can see how Lot Sweep works. Start a new scan to log a real vehicle.</p><button id=\"dismissNotice\" type=\"button\">Got it</button></div>";
+    }
+
+    return (
+      "<main class=\"shell\">" +
+        "<section class=\"stats\">" +
+          "<div class=\"stat-tile\"><span class=\"stat-value\">" + total + "</span><span class=\"stat-label\">Vehicles logged</span></div>" +
+          "<div class=\"stat-tile\"><span class=\"stat-value\">" + pending + "</span><span class=\"stat-label\">Pending stock-in</span></div>" +
+          "<div class=\"stat-tile\"><span class=\"stat-value\">" + stocked + "</span><span class=\"stat-label\">Stocked in</span></div>" +
+        "</section>" +
+        "<div class=\"primary-action-row\">" +
+          "<button id=\"startSessionBtn\" type=\"button\" class=\"btn btn-accent btn-lg\">Start new scan session</button>" +
+          "<p class=\"primary-action-hint\">Scans a VIN barcode and opens a session at <strong>" + escapeHtml(state.activeStore) + "</strong>.</p>" +
+        "</div>" +
+      "</main>" +
+      "<section class=\"shell sessions\">" +
+        "<div class=\"section-heading\"><h2>Scan sessions</h2></div>" +
+        notice +
+        "<ul class=\"session-list\">" + sessionsHtml + "</ul>" +
+      "</section>"
+    );
+  }
+
+  function renderSessionDetail(){
+    var s = findSession(view.sessionId);
+    if(!s){ view.screen = "home"; return renderHome(); }
+    var rows = s.vehicles.map(function(v){
+      var title = [v.year || "", v.make || "Unknown make", v.model || ""].filter(Boolean).join(" ") + (v.trim ? " " + v.trim : "");
+      return (
+        "<li class=\"vehicle-card status-\" + statusKey(v.status) + \"\" data-open-vehicle=\"\" + escapeHtml(v.id) + \"\">\" +
+          \"<span class=\\\"status-stripe\\\" aria-hidden=\\\"true\\\"></span>\" +
+          \"<div class=\\\"vehicle-card-main\\\">" +
+            "<div class=\"vehicle-idline\">" +
+              (v.stockNumber ? "<span class=\"vehicle-stock\">#" + escapeHtml(v.stockNumber) + "</span>" : "<span class=\"vehicle-stock is-muted\">No stock #</span>") +
+              "<span class=\"vehicle-vin\">" + escapeHtml(v.vin) + "</span>" +
+            "</div>" +
+            "<div class=\"vehicle-title\">" + escapeHtml(title || "Unidentified vehicle") + "</div>" +
+            "<div class=\"vehicle-tags\">" +
+              "<span class=\"pill " + statusPillClass(v.status) + "\">" + escapeHtml(v.status) + "</span>" +
+              "<span class=\"pill pill-neutral\">" + escapeHtml(v.location) + "</span>" +
+              "<span class=\"pill " + (v.labelStatus === "Printed" ? "pill-ok" : "pill-neutral") + "\">" + escapeHtml(v.labelStatus) + "</span>" +
+            "</div>" +
+          "</div>" +
+          "<span class=\"chev\" aria-hidden=\"true\">›</span>" +
+        "</li>"
+      );
+    }).join("");
+
+    return (
+      "<main class=\"shell session-detail\">" +
+        "<button id=\"backBtn\" type=\"button\" class=\"back-link\">‹ All sessions</button>" +
+        "<div class=\"session-detail-head\">" +
+          "<div><h2>" + escapeHtml(s.id) + "</h2><p class=\"muted\">" + escapeHtml(s.store) + " · started " + fmtWhen(s.createdAt) + "</p></div>" +
+          "<div class=\"session-detail-actions\">" +
+            (s.vehicles.length ? "<button id=\"printSessionBtn\" type=\"button\" class=\"btn\">Print labels</button>" : "") +
+            "<button id=\"scanMoreBtn\" type=\"button\" class=\"btn btn-accent\">Scan vehicle</button>" +
+          "</div>" +
+        "</div>" +
+        (s.vehicles.length ?
+          "<ul class=\"vehicle-list\">" + rows + "</ul>" :
+          "<div class=\"empty-state\">No vehicles scanned into this session yet.<br>Tap “Scan vehicle” to add one.</div>"
+        ) +
+      "</main>"
+    );
+  }
